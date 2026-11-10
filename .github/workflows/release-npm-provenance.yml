@@ -26,10 +26,12 @@ jobs:
       - name: Verify JavaScript syntax & zero runtime dependencies
         run: npm run lint
 
-      - name: Run Official n8n Community Package Scanner
-        run: npx @n8n/scan-community-package .
-
       - name: Publish to npm with Provenance
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Run Official n8n Community Package Scanner
+        run: |
+          sleep 5
+          npx --yes @n8n/scan-community-package n8n-nodes-revclamp

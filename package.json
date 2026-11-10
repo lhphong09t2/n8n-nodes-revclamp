@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-revclamp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Track company career pages (Greenhouse, Ashby, Lever, SmartRecruiters, Workday) and trigger n8n workflows when new roles open, salaries change, or roles close.",
   "license": "MIT",
   "author": {
