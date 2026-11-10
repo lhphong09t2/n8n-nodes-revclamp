@@ -1,0 +1,35 @@
+name: Publish n8n-nodes-revclamp to npm with Provenance
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Verify & Publish Community Node Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22 with npm Registry
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Verify JavaScript syntax & zero runtime dependencies
+        run: npm run lint
+
+      - name: Run Official n8n Community Package Scanner
+        run: npx @n8n/scan-community-package .
+
+      - name: Publish to npm with Provenance
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
