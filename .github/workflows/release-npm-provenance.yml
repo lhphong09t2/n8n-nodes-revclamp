@@ -33,5 +33,12 @@ jobs:
 
       - name: Run Official n8n Community Package Scanner
         run: |
-          sleep 5
-          npx --yes @n8n/scan-community-package n8n-nodes-revclamp
+          PKG_VER=$(node -p "require('./package.json').version")
+          for i in $(seq 1 18); do
+            LIVE_VER=$(npm view n8n-nodes-revclamp version 2>/dev/null || echo "")
+            if [ "$LIVE_VER" = "$PKG_VER" ]; then
+              break
+            fi
+            sleep 5
+          done
+          npx --yes @n8n/scan-community-package "n8n-nodes-revclamp@${PKG_VER}"
