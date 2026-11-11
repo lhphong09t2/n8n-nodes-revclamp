@@ -1,3 +1,131 @@
+let NodeApiError;
+let NodeOperationError;
+try {
+  ({ NodeApiError, NodeOperationError } = require('n8n-workflow'));
+} catch {
+  NodeApiError = class NodeApiError extends Error {
+    constructor(node, errorResponse, options = {}) {
+      const rawMsg =
+        (options && options.message) ||
+        (errorResponse &&
+          typeof errorResponse === 'object' &&
+          (errorResponse.message ||
+            (errorResponse.response &&
+              errorResponse.response.body &&
+              (errorResponse.response.body.message || errorResponse.response.body.error)))) ||
+        String(errorResponse || 'API request failed');
+      super(String(rawMsg));
+      this.name = 'NodeApiError';
+      this.node = node;
+      this.httpCode =
+        String(
+          (options && options.httpCode) ||
+            (errorResponse &&
+              (errorResponse.httpCode ||
+                errorResponse.statusCode ||
+                (errorResponse.response && errorResponse.response.statusCode))) ||
+            ''
+        ) || null;
+      this.description =
+        (options && options.description) ||
+        (errorResponse &&
+          errorResponse.response &&
+          errorResponse.response.body &&
+          (errorResponse.response.body.error || errorResponse.response.body.upgrade_url)) ||
+        undefined;
+      this.context =
+        options && options.itemIndex !== undefined ? { itemIndex: options.itemIndex } : {};
+      this.cause = errorResponse;
+    }
+  };
+  NodeOperationError = class NodeOperationError extends Error {
+    constructor(node, error, options = {}) {
+      const msg = error instanceof Error ? error.message : String(error || 'Operation error');
+      super(msg);
+      this.name = 'NodeOperationError';
+      this.node = node;
+      this.description =
+        options && options.description ? String(options.description) : undefined;
+      this.context =
+        options && options.itemIndex !== undefined ? { itemIndex: options.itemIndex } : {};
+    }
+  };
+}
+
+function resolveNormalizedBaseUrl(rawBaseUrl) {
+  const trimmed = String(rawBaseUrl || '')
+    .trim()
+    .replace(/\/+$/, '');
+  return trimmed || 'https://revclamp.com';
+}
+
+function isHttpUrlInput(value) {
+  return /^https?:\/\//i.test(String(value || '').trim());
+}
+
+function wrapExecutionError(nodeRef, error, itemIndex) {
+  if (
+    error &&
+    typeof error === 'object' &&
+    (error.name === 'NodeOperationError' || error.name === 'NodeApiError')
+  ) {
+    if (itemIndex !== undefined) {
+      if (!error.context || typeof error.context !== 'object') {
+        error.context = {};
+      }
+      if (error.context.itemIndex === undefined) {
+        error.context.itemIndex = itemIndex;
+      }
+    }
+    return error;
+  }
+
+  const payload =
+    (error &&
+      typeof error === 'object' &&
+      ((error.response && (error.response.body || error.response.data)) ||
+        error.error ||
+        error.body)) ||
+    null;
+  const httpCodeRaw =
+    error &&
+    typeof error === 'object' &&
+    (error.httpCode ||
+      error.statusCode ||
+      error.status ||
+      (error.response && (error.response.statusCode || error.response.status)));
+  const httpCode = httpCodeRaw ? String(httpCodeRaw) : undefined;
+  const apiErrorCode =
+    payload && typeof payload === 'object' && payload.error ? String(payload.error) : undefined;
+  const upgradeUrl =
+    payload && typeof payload === 'object' && payload.upgrade_url
+      ? String(payload.upgrade_url)
+      : undefined;
+  const apiMessage =
+    (payload && typeof payload === 'object' && (payload.message || payload.error)) ||
+    (error instanceof Error ? error.message : String(error || 'API request failed'));
+
+  const descriptionParts = [];
+  if (apiErrorCode && apiErrorCode !== apiMessage) {
+    descriptionParts.push(`Code: ${apiErrorCode}`);
+  }
+  if (upgradeUrl) {
+    descriptionParts.push(`Upgrade: ${upgradeUrl}`);
+  }
+
+  const errorJson =
+    error && typeof error === 'object'
+      ? error
+      : { message: String(error || 'API request failed') };
+
+  return new NodeApiError(nodeRef, errorJson, {
+    message: String(apiMessage),
+    description: descriptionParts.length > 0 ? descriptionParts.join(' | ') : undefined,
+    httpCode,
+    itemIndex,
+  });
+}
+
 class RevClampHiringWatchlist {
   constructor() {
     this.description = {
@@ -18,7 +146,24 @@ class RevClampHiringWatchlist {
       credentials: [
         {
           name: 'revClampApi',
-          required: false,
+          required: true,
+          displayOptions: {
+            show: {
+              resource: ['watchlist'],
+              operation: ['enrollBoard', 'listBoards', 'syncWatchlist'],
+            },
+          },
+        },
+        {
+          name: 'revClampApi',
+          required: true,
+          displayOptions: {
+            show: {
+              resource: ['watchlist'],
+              operation: ['previewDiff'],
+              demoMode: [false],
+            },
+          },
         },
       ],
       properties: [
@@ -132,7 +277,23 @@ class RevClampHiringWatchlist {
           displayOptions: {
             show: {
               resource: ['watchlist'],
-              operation: ['previewDiff', 'enrollBoard'],
+              operation: ['previewDiff'],
+              demoMode: [false],
+            },
+          },
+        },
+        {
+          displayName: 'Company Domain or Career Page URL',
+          name: 'companyDomain',
+          type: 'string',
+          default: 'stripe.com',
+          placeholder: 'e.g. stripe.com or https://jobs.ashbyhq.com/ramp',
+          description:
+            'Paste the company domain (such as stripe.com or openai.com) or a direct Greenhouse, Ashby, Lever, SmartRecruiters, or Workday career page link',
+          displayOptions: {
+            show: {
+              resource: ['watchlist'],
+              operation: ['enrollBoard'],
             },
           },
         },
@@ -288,12 +449,19 @@ class RevClampHiringWatchlist {
     const items = this.getInputData();
     const returnData = [];
     const length = items.length || 1;
+    const nodeRef =
+      typeof this.getNode === 'function'
+        ? this.getNode()
+        : {
+            name: 'RevClamp TalentPulse Watchlist',
+            type: 'n8n-nodes-revclamp.revClampHiringWatchlist',
+          };
 
     let baseUrl = 'https://revclamp.com';
     try {
       const creds = await this.getCredentials('revClampApi');
       if (creds && creds.baseUrl) {
-        baseUrl = String(creds.baseUrl).replace(/\/+$/, '');
+        baseUrl = resolveNormalizedBaseUrl(creds.baseUrl);
       }
     } catch {
       baseUrl = 'https://revclamp.com';
@@ -304,11 +472,12 @@ class RevClampHiringWatchlist {
         const operation = this.getNodeParameter('operation', i, 'previewDiff');
 
         if (operation === 'previewDiff') {
-          const demoMode = this.getNodeParameter('demoMode', i, true);
-          const companyDomain = String(this.getNodeParameter('companyDomain', i, '') || '').trim();
+          const demoMode = Boolean(this.getNodeParameter('demoMode', i, true));
           const atsProvider = String(this.getNodeParameter('atsProvider', i, '') || '').trim();
           const boardSlug = String(this.getNodeParameter('boardSlug', i, '') || '').trim();
-          const departmentFilter = String(this.getNodeParameter('departmentFilter', i, '') || '').trim();
+          const departmentFilter = String(
+            this.getNodeParameter('departmentFilter', i, '') || ''
+          ).trim();
           const keywordFilter = String(this.getNodeParameter('keywordFilter', i, '') || '').trim();
           const remoteOnly = Boolean(this.getNodeParameter('remoteOnly', i, false));
 
@@ -318,16 +487,27 @@ class RevClampHiringWatchlist {
           if (demoMode) {
             body.demo = true;
             body.preset = this.getNodeParameter('preset', i, 'devtools_outbound_diff');
-          }
-          if (companyDomain) {
-            if (companyDomain.startsWith('http://') || companyDomain.startsWith('https://')) {
-              body.board_url = companyDomain;
-            } else {
-              body.domain = companyDomain;
+          } else {
+            const companyDomain = String(
+              this.getNodeParameter('companyDomain', i, '') || ''
+            ).trim();
+            if (!companyDomain && !(atsProvider && boardSlug)) {
+              throw new NodeOperationError(
+                nodeRef,
+                'Provide a Company Domain / Career Page URL or both ATS Platform and Board Slug when Demo Mode is disabled.',
+                { itemIndex: i }
+              );
             }
+            if (companyDomain) {
+              if (isHttpUrlInput(companyDomain)) {
+                body.board_url = companyDomain;
+              } else {
+                body.domain = companyDomain;
+              }
+            }
+            if (atsProvider) body.ats_provider = atsProvider;
+            if (boardSlug) body.board_slug = boardSlug;
           }
-          if (atsProvider) body.ats_provider = atsProvider;
-          if (boardSlug) body.board_slug = boardSlug;
           if (departmentFilter) body.department_filter = departmentFilter;
           if (keywordFilter) body.keyword_filter = keywordFilter;
           if (remoteOnly) body.remote_only = true;
@@ -358,20 +538,34 @@ class RevClampHiringWatchlist {
           const companyDomain = String(this.getNodeParameter('companyDomain', i, '') || '').trim();
           const atsProvider = String(this.getNodeParameter('atsProvider', i, '') || '').trim();
           const boardSlug = String(this.getNodeParameter('boardSlug', i, '') || '').trim();
-          const departmentFilter = String(this.getNodeParameter('departmentFilter', i, '') || '').trim();
+          const departmentFilter = String(
+            this.getNodeParameter('departmentFilter', i, '') || ''
+          ).trim();
           const keywordFilter = String(this.getNodeParameter('keywordFilter', i, '') || '').trim();
           const remoteOnly = Boolean(this.getNodeParameter('remoteOnly', i, false));
           const alertEmail = String(this.getNodeParameter('alertEmail', i, '') || '').trim();
-          const deliveryWebhookUrl = String(this.getNodeParameter('deliveryWebhookUrl', i, '') || '').trim();
+          const deliveryWebhookUrl = String(
+            this.getNodeParameter('deliveryWebhookUrl', i, '') || ''
+          ).trim();
+
+          if (!companyDomain && !(atsProvider && boardSlug)) {
+            throw new NodeOperationError(
+              nodeRef,
+              'Provide a Company Domain / Career Page URL or both ATS Platform and Board Slug to enroll a career page.',
+              { itemIndex: i }
+            );
+          }
 
           const body = {
             operation: 'upsert',
             product_context: 'watchlist',
           };
-          if (companyDomain.startsWith('http://') || companyDomain.startsWith('https://')) {
-            body.board_url = companyDomain;
-          } else {
-            body.domain = companyDomain;
+          if (companyDomain) {
+            if (isHttpUrlInput(companyDomain)) {
+              body.board_url = companyDomain;
+            } else {
+              body.domain = companyDomain;
+            }
           }
           if (atsProvider) body.ats_provider = atsProvider;
           if (boardSlug) body.board_slug = boardSlug;
@@ -423,13 +617,15 @@ class RevClampHiringWatchlist {
         }
 
         if (operation === 'syncWatchlist') {
-          const syncFilter = String(this.getNodeParameter('syncCompanyFilter', i, '') || '').trim();
+          const syncFilter = String(
+            this.getNodeParameter('syncCompanyFilter', i, '') || ''
+          ).trim();
           const body = {
             operation: 'sync',
             product_context: 'watchlist',
           };
           if (syncFilter) {
-            if (syncFilter.startsWith('http://') || syncFilter.startsWith('https://')) {
+            if (isHttpUrlInput(syncFilter)) {
               body.board_url = syncFilter;
             } else {
               body.domain = syncFilter;
@@ -454,19 +650,33 @@ class RevClampHiringWatchlist {
           continue;
         }
 
-        throw new Error(`Unsupported operation: ${String(operation)}`);
+        throw new NodeOperationError(
+          nodeRef,
+          `Unsupported operation: ${String(operation)}`,
+          { itemIndex: i }
+        );
       } catch (error) {
+        const wrappedError = wrapExecutionError(nodeRef, error, i);
         if (this.continueOnFail && this.continueOnFail()) {
+          const errorJson = {
+            ok: false,
+            error: wrappedError.message,
+            itemIndex: i,
+          };
+          if (wrappedError.httpCode) {
+            errorJson.httpCode = wrappedError.httpCode;
+          }
+          if (wrappedError.description) {
+            errorJson.description = wrappedError.description;
+          }
           returnData.push({
-            json: {
-              ok: false,
-              error: error instanceof Error ? error.message : String(error),
-            },
+            json: errorJson,
+            error: wrappedError,
             pairedItem: { item: i },
           });
           continue;
         }
-        throw error;
+        throw wrappedError;
       }
     }
 

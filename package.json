@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-revclamp",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Track company career pages (Greenhouse, Ashby, Lever, SmartRecruiters, Workday) and trigger n8n workflows when new roles open, salaries change, or roles close.",
   "license": "MIT",
   "author": {
@@ -33,7 +33,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "lint": "node --check credentials/RevClampApi.credentials.js && node --check nodes/RevClampHiringWatchlist/RevClampHiringWatchlist.node.js && node --check nodes/RevClampHiringWatchlistTrigger/RevClampHiringWatchlistTrigger.node.js && node --check dist/credentials/RevClampApi.credentials.js && node --check dist/nodes/RevClampHiringWatchlist/RevClampHiringWatchlist.node.js && node --check dist/nodes/RevClampHiringWatchlistTrigger/RevClampHiringWatchlistTrigger.node.js"
+    "lint": "node --check credentials/RevClampApi.credentials.js && node --check nodes/RevClampHiringWatchlist/RevClampHiringWatchlist.node.js && node --check nodes/RevClampHiringWatchlistTrigger/RevClampHiringWatchlistTrigger.node.js && node --check dist/credentials/RevClampApi.credentials.js && node --check dist/nodes/RevClampHiringWatchlist/RevClampHiringWatchlist.node.js && node --check dist/nodes/RevClampHiringWatchlistTrigger/RevClampHiringWatchlistTrigger.node.js && cmp -s credentials/RevClampApi.credentials.js dist/credentials/RevClampApi.credentials.js && cmp -s nodes/RevClampHiringWatchlist/RevClampHiringWatchlist.node.js dist/nodes/RevClampHiringWatchlist/RevClampHiringWatchlist.node.js && cmp -s nodes/RevClampHiringWatchlistTrigger/RevClampHiringWatchlistTrigger.node.js dist/nodes/RevClampHiringWatchlistTrigger/RevClampHiringWatchlistTrigger.node.js && cmp -s nodes/RevClampHiringWatchlist/revclamp.svg dist/nodes/RevClampHiringWatchlist/revclamp.svg && cmp -s nodes/RevClampHiringWatchlistTrigger/revclamp.svg dist/nodes/RevClampHiringWatchlistTrigger/revclamp.svg"
   },
   "dependencies": {},
   "peerDependencies": {

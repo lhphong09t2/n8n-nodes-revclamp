@@ -11,9 +11,10 @@ class RevClampApi {
         typeOptions: {
           password: true,
         },
+        required: true,
         default: '',
         description:
-          'Your private RevClamp Workspace Key (rg_live_...). Leave blank when using Demo Mode.',
+          'Your private RevClamp Workspace Key (rg_live_...). Not required when running Preview Daily Hiring Changes in Demo Mode.',
       },
       {
         displayName: 'API Base URL',
@@ -27,14 +28,17 @@ class RevClampApi {
       type: 'generic',
       properties: {
         headers: {
-          Authorization: '=Bearer {{$credentials.apiKey}}',
-          'X-RevClamp-Key': '={{$credentials.apiKey}}',
+          Authorization:
+            '={{$credentials.apiKey && $credentials.apiKey.trim() ? "Bearer " + $credentials.apiKey.trim() : undefined}}',
+          'X-RevClamp-Key':
+            '={{$credentials.apiKey && $credentials.apiKey.trim() ? $credentials.apiKey.trim() : undefined}}',
         },
       },
     };
     this.test = {
       request: {
-        baseURL: '={{$credentials.baseUrl}}',
+        baseURL:
+          '={{$credentials.baseUrl && $credentials.baseUrl.trim() ? $credentials.baseUrl.trim().replace(/\\/+$/, "") : "https://revclamp.com"}}',
         url: '/api/v1/b2b/ats-watchlist',
         method: 'GET',
       },
