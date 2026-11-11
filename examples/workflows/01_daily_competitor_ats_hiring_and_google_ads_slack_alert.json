@@ -1,0 +1,400 @@
+{
+  "name": "01 - Daily Competitor ATS Hiring & Google Ads Spend Slack Alert (RevClamp)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Daily Competitor ATS Hiring & Google Ads Spend Alert\n\n**1. Instant Zero-Key Test (Works Out-of-the-Box with Zero Credentials):**\nClick **Test workflow** right now. Both `RevClamp Hiring Watchlist (Preview Diff)` (`demoMode: true`) and `Google Ads Transparency Lookup` (`demo: true`) run live against `https://revclamp.com` with zero API keys, and `Zero-Key Demo Output (Slack Block Kit Preview)` renders the formatted Slack Block Kit JSON cleanly.\n\n**2. Switch to Live 24/7 Competitor Monitoring:**\n- Provision a free workspace key (`rg_live_YOUR_WORKSPACE_KEY`) at `https://revclamp.com/tools/ats-hiring-watchlist`.\n- On `Configure Target & Slack Webhook`, paste your Slack Incoming Webhook URL (`https://hooks.slack.com/services/<TEAM_ID>/<BOT_ID>/<WEBHOOK_KEY>`) into `slackWebhookUrl`.\n- On `RevClamp Hiring Watchlist (Preview Diff)`, set `demoMode` to `false` and connect your `revClampApi` credential (or add the `RevClamp TalentPulse Watchlist Trigger` node for event-driven polling).\n- On `Google Ads Transparency Lookup`, add header `Authorization: Bearer rg_live_YOUR_WORKSPACE_KEY` and set `demo: false`.",
+        "height": 360,
+        "width": 700,
+        "color": 4
+      },
+      "id": "b1010001-0001-4000-8000-000000000001",
+      "name": "Quickstart & Live Mode Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        180,
+        60
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "b1010001-0001-4000-8000-000000000002",
+      "name": "Test Workflow (Zero-Key Demo)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "b1010001-0001-4000-8000-000000000003",
+      "name": "Daily Weekday 08:00 Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-target-domain",
+              "name": "targetDomain",
+              "value": "={{ $json.targetDomain || 'stripe.com' }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-slack-webhook-url",
+              "name": "slackWebhookUrl",
+              "value": "={{ $json.slackWebhookUrl || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "cfg-demo-mode",
+              "name": "demo",
+              "value": "={{ $json.demo !== undefined ? Boolean($json.demo) : true }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b1010001-0001-4000-8000-000000000004",
+      "name": "Configure Target & Slack Webhook",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "watchlist",
+        "operation": "previewDiff",
+        "demoMode": true,
+        "preset": "devtools_outbound_diff"
+      },
+      "id": "b1010001-0001-4000-8000-000000000005",
+      "name": "RevClamp Hiring Watchlist (Preview Diff)",
+      "type": "n8n-nodes-revclamp.revClampHiringWatchlist",
+      "typeVersion": 1,
+      "position": [
+        680,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-actionable-hiring-diff",
+              "leftValue": "={{ Number($json.counts?.opened || 0) + Number($json.counts?.compChanged || 0) + ($json.eventType ? 1 : 0) }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1010001-0001-4000-8000-000000000006",
+      "name": "Has New Roles or Comp Changes?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        920,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://revclamp.com/api/v1/b2b/ads-transparency",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ domain: $('Configure Target & Slack Webhook').first().json.targetDomain || 'stripe.com', region: 'ALL', limit: 3, demo: Boolean($('Configure Target & Slack Webhook').first().json.demo) }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "b1010001-0001-4000-8000-000000000007",
+      "name": "Google Ads Transparency Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Configure Target & Slack Webhook').first().json || {};\nconst hiring = $('Has New Roles or Comp Changes?').first().json || {};\nconst ads = $input.first().json || {};\n\nconst companyLabel = hiring.companyLabel || hiring.company_label || ads.domain || cfg.targetDomain || 'Stripe';\nconst boardKey = hiring.boardKey || hiring.board_key || 'GREENHOUSE:stripe';\nconst opened = Number(hiring.counts?.opened ?? (hiring.eventType === 'JOB_OPENED' ? 1 : 0));\nconst compChanged = Number(hiring.counts?.compChanged ?? (hiring.eventType === 'JOB_COMP_CHANGED' ? 1 : 0));\nconst closed = Number(hiring.counts?.closed ?? (hiring.eventType === 'JOB_CLOSED' ? 1 : 0));\n\nconst rawEvents = [];\nif (Array.isArray(hiring.events)) {\n  rawEvents.push(...hiring.events);\n} else if (Array.isArray(hiring.windows)) {\n  for (const w of hiring.windows) {\n    if (Array.isArray(w.emittedEvents)) rawEvents.push(...w.emittedEvents);\n  }\n} else if (hiring.eventType) {\n  rawEvents.push(hiring);\n}\n\nconst roleBullets = rawEvents.slice(0, 4).map((ev) => {\n  const title = ev.title || ev.jobTitle || 'Role Update';\n  const kind = ev.eventType || ev.type || 'DIFF';\n  const salary = ev.compensationSummary || ev.newCompensation || ev.salaryBand || 'Comp band monitored';\n  return `- [${kind}] ${title} (${salary})`;\n});\nif (roleBullets.length === 0) {\n  roleBullets.push(`- ${opened} opened, ${compChanged} salary updates, ${closed} closed on ${boardKey}`);\n}\n\nconst creatives = Array.isArray(ads.creatives) ? ads.creatives.slice(0, 3) : [];\nconst adBullets = creatives.map((c) => `- [${c.format || 'AD'}] ${c.headline || c.creative_id} (${c.region || 'US'})`);\nconst activeRange = ads.estimated_active_ads_range?.label || String(creatives.length);\n\nconst slackMessage = [\n  `*Competitor GTM Signal: ${companyLabel} (${boardKey})*`,\n  `Hiring Diff: *+${opened} opened* | *${compChanged} salary band changes* | *-${closed} closed*`,\n  ...roleBullets,\n  `Google Ads (${ads.advertiser_name || companyLabel} / ${ads.advertiser_id || 'Verified'}): *${activeRange} active creatives*`,\n  ...adBullets,\n  `Interactive Watchlist Diff: https://revclamp.com/tools/ats-hiring-watchlist?preset=devtools_outbound_diff&autorun=1`\n].join('\\n');\n\nconst slackBlockKitPayload = {\n  text: `Competitor GTM Signal: ${companyLabel} (+${opened} opened, ${compChanged} comp changes, ${activeRange} active ads)`,\n  blocks: [\n    {\n      type: 'header',\n      text: { type: 'plain_text', text: `Competitor GTM Signal: ${companyLabel} (${boardKey})` }\n    },\n    {\n      type: 'section',\n      text: { type: 'mrkdwn', text: slackMessage }\n    }\n  ]\n};\n\nconst rawWebhook = String(cfg.slackWebhookUrl || '').trim();\nconst hasLiveSlackWebhook = rawWebhook.startsWith('https://hooks.slack.com/services/') && !rawWebhook.includes('<');\n\nreturn [{\n  json: {\n    companyLabel,\n    boardKey,\n    opened,\n    compChanged,\n    closed,\n    advertiserId: ads.advertiser_id || null,\n    advertiserName: ads.advertiser_name || null,\n    estimatedActiveAdsRange: activeRange,\n    creativesSampled: creatives.length,\n    slackWebhookUrl: rawWebhook,\n    hasLiveSlackWebhook,\n    slackMessage,\n    slackBlockKitPayload\n  }\n}];"
+      },
+      "id": "b1010001-0001-4000-8000-000000000008",
+      "name": "Format Hiring + Ad Spend Brief",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-live-slack-webhook",
+              "leftValue": "={{ $json.hasLiveSlackWebhook }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1010001-0001-4000-8000-000000000009",
+      "name": "Live Slack Webhook Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1660,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.slackWebhookUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.slackBlockKitPayload) }}",
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "id": "b1010001-0001-4000-8000-000000000010",
+      "name": "Post Competitor Alert to Slack Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "demo-status",
+              "name": "deliveryMode",
+              "value": "zero_key_demo_preview (replace slackWebhookUrl in Configure Target & Slack Webhook to post live)",
+              "type": "string"
+            },
+            {
+              "id": "demo-slack-markdown",
+              "name": "slackMessage",
+              "value": "={{ $json.slackMessage }}",
+              "type": "string"
+            },
+            {
+              "id": "demo-slack-blocks",
+              "name": "slackBlockKitPayload",
+              "value": "={{ $json.slackBlockKitPayload }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b1010001-0001-4000-8000-000000000011",
+      "name": "Zero-Key Demo Output (Slack Block Kit Preview)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1920,
+        620
+      ]
+    }
+  ],
+  "connections": {
+    "Test Workflow (Zero-Key Demo)": {
+      "main": [
+        [
+          {
+            "node": "Configure Target & Slack Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Weekday 08:00 Schedule": {
+      "main": [
+        [
+          {
+            "node": "Configure Target & Slack Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configure Target & Slack Webhook": {
+      "main": [
+        [
+          {
+            "node": "RevClamp Hiring Watchlist (Preview Diff)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RevClamp Hiring Watchlist (Preview Diff)": {
+      "main": [
+        [
+          {
+            "node": "Has New Roles or Comp Changes?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has New Roles or Comp Changes?": {
+      "main": [
+        [
+          {
+            "node": "Google Ads Transparency Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Ads Transparency Lookup": {
+      "main": [
+        [
+          {
+            "node": "Format Hiring + Ad Spend Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Hiring + Ad Spend Brief": {
+      "main": [
+        [
+          {
+            "node": "Live Slack Webhook Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Live Slack Webhook Configured?": {
+      "main": [
+        [
+          {
+            "node": "Post Competitor Alert to Slack Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Zero-Key Demo Output (Slack Block Kit Preview)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {
+    "Test Workflow (Zero-Key Demo)": [
+      {
+        "json": {
+          "targetDomain": "stripe.com",
+          "slackWebhookUrl": "",
+          "demo": true
+        }
+      }
+    ]
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "revclamp-gtm-pack-nov2026-wf01"
+  },
+  "tags": [
+    {
+      "name": "B2B Sales"
+    },
+    {
+      "name": "Competitive Intelligence"
+    },
+    {
+      "name": "RevClamp"
+    }
+  ]
+}

@@ -1,0 +1,446 @@
+{
+  "name": "03 - Stripe Dispute Visa CE 3.0 Lint & EU VAT VIES Guard (RevClamp)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Stripe Dispute Visa CE 3.0 & EU VAT VIES Compliance Guard\n\n**1. Instant Zero-Key Test (Works Out-of-the-Box with Zero Credentials):**\nClick **Test workflow** right now. All 3 parallel branches (`Visa CE 3.0 120d-365d & 18k Char Lint`, `EU VAT VIES Consultation Proof`, and `RevClamp Hiring Watchlist` in `demoMode: true`) execute live against `https://revclamp.com` without requiring any API key or Slack credential.\n\n**2. Production Stripe / B2B Order Webhook Setup:**\n- Provision a workspace key (`rg_live_YOUR_WORKSPACE_KEY`) at `https://revclamp.com`.\n- On `Seed Dispute & Order Context`, set `demo` to `false` and paste your Finance / Dispute Slack Incoming Webhook URL (`https://hooks.slack.com/services/<TEAM_ID>/<BOT_ID>/<WEBHOOK_KEY>`) into `slackWebhookUrl`.\n- Add header `Authorization: Bearer rg_live_YOUR_WORKSPACE_KEY` on both HTTP Request nodes, and on `RevClamp Hiring Watchlist` connect your `revClampApi` credential and switch `operation` to `listBoards` (or `demoMode: false` on `previewDiff`).",
+        "height": 360,
+        "width": 700,
+        "color": 4
+      },
+      "id": "b1030003-0003-4000-8000-000000000001",
+      "name": "Quickstart & Finance Triage Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        180,
+        60
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "b1030003-0003-4000-8000-000000000002",
+      "name": "Test Sample Dispute & VAT Order",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revclamp-stripe-ce3-vies-guard",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "b1030003-0003-4000-8000-000000000003",
+      "name": "Stripe Dispute or Order Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "revclamp-stripe-ce3-vies-guard-v1",
+      "position": [
+        200,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "field-demo",
+              "name": "demo",
+              "value": "={{ $json.body?.demo !== undefined ? Boolean($json.body.demo) : ($json.demo !== undefined ? Boolean($json.demo) : true) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "field-dispute-id",
+              "name": "disputeId",
+              "value": "={{ $json.body?.disputeId || $json.disputeId || 'du_sample_b2b_01' }}",
+              "type": "string"
+            },
+            {
+              "id": "field-customer-id",
+              "name": "customerId",
+              "value": "={{ $json.body?.customerId || $json.customerId || 'cus_sample_b2b_01' }}",
+              "type": "string"
+            },
+            {
+              "id": "field-seller-country",
+              "name": "sellerCountry",
+              "value": "={{ $json.body?.sellerCountry || $json.sellerCountry || 'DE' }}",
+              "type": "string"
+            },
+            {
+              "id": "field-buyer-vat-id",
+              "name": "buyerVatId",
+              "value": "={{ $json.body?.buyerVatId || $json.buyerVatId || 'NL854502130B01' }}",
+              "type": "string"
+            },
+            {
+              "id": "field-slack-webhook",
+              "name": "slackWebhookUrl",
+              "value": "={{ $json.body?.slackWebhookUrl || $json.slackWebhookUrl || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b1030003-0003-4000-8000-000000000004",
+      "name": "Seed Dispute & Order Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        460,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://revclamp.com/api/v1/tools/stripe-ce3-checker",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.demo ? JSON.stringify({ demo: true }) : JSON.stringify({ disputeId: $json.disputeId, customerId: $json.customerId, disputeReason: 'fraudulent', submit: false }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "b1030003-0003-4000-8000-000000000005",
+      "name": "Visa CE 3.0 120d-365d & 18k Char Lint",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://revclamp.com/api/v1/tools/vies-vat-validator",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.demo ? JSON.stringify({ demo: true }) : JSON.stringify({ sellerCountry: $json.sellerCountry, buyerVatId: $json.buyerVatId, supplyType: 'SERVICES', viesMode: 'LIVE' }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "b1030003-0003-4000-8000-000000000006",
+      "name": "EU VAT VIES Consultation Proof",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "watchlist",
+        "operation": "previewDiff",
+        "demoMode": true,
+        "preset": "devtools_outbound_diff"
+      },
+      "id": "b1030003-0003-4000-8000-000000000007",
+      "name": "RevClamp Hiring Watchlist (Account Verification)",
+      "type": "n8n-nodes-revclamp.revClampHiringWatchlist",
+      "typeVersion": 1,
+      "position": [
+        760,
+        740
+      ]
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "b1030003-0003-4000-8000-000000000008",
+      "name": "Await Parallel Compliance Checks",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1060,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Seed Dispute & Order Context').first().json || {};\nconst ce3 = $('Visa CE 3.0 120d-365d & 18k Char Lint').first().json || {};\nconst vies = $('EU VAT VIES Consultation Proof').first().json || {};\nconst acctRes = $('RevClamp Hiring Watchlist (Account Verification)').first()?.json || {};\n\nconst ce3Eligible = Boolean(ce3.ce3Eligible || ce3.ce3Qualification?.qualified);\nconst ce3Status = ce3.ce3Qualification?.status || 'EVALUATED';\nconst utf16Units = Number(ce3.utf16CodeUnits || 0);\nconst utf16Safe = utf16Units <= 18000;\n\nconst vatValid = Boolean(vies.valid);\nconst vatAction = vies.action || 'MANUAL_REVIEW';\nconst vatDirective = vies.sellerStatutoryTerminology?.directiveArticle || 'Council Directive 2006/112/EC';\n\nconst accountBoard = acctRes.boardKey || acctRes.board_key || (Array.isArray(acctRes.boards) ? `${acctRes.boards.length} watched board(s)` : 'verified');\n\nconst rawWebhook = String(ctx.slackWebhookUrl || '').trim();\nconst hasLiveSlackWebhook = rawWebhook.startsWith('https://hooks.slack.com/services/') && !rawWebhook.includes('<');\n\nconst financeBrief = [\n  `*Finance & Dispute Compliance Triage (${ce3.disputeId || ctx.disputeId})*`,\n  `- Visa CE 3.0 (120d-365d): eligible=${ce3Eligible} (${ce3Status}) | submit=${Boolean(ce3.submit)} (non-destructive staging)`,\n  `- Stripe Evidence UTF-16 Budget: ${utf16Units} / 18,000 units (${utf16Safe ? 'SAFE' : 'OVERFLOW_RISK'})`,\n  `- EU VAT VIES Check: valid=${vatValid} | action=${vatAction} (${vatDirective})`,\n  `- Merchant / Buyer Account Signal: ${accountBoard}`\n].join('\\n');\n\nreturn [{\n  json: {\n    disputeId: ce3.disputeId || ctx.disputeId,\n    ce3Eligible,\n    ce3Status,\n    utf16CodeUnits: utf16Units,\n    utf16Safe,\n    vatValid,\n    vatAction,\n    accountBoard,\n    requiresManualFinanceReview: !ce3Eligible || !vatValid || !utf16Safe,\n    slackWebhookUrl: rawWebhook,\n    hasLiveSlackWebhook,\n    financeBrief\n  }\n}];"
+      },
+      "id": "b1030003-0003-4000-8000-000000000009",
+      "name": "Assemble Finance & Dispute Triage Receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-finance-live-webhook",
+              "leftValue": "={{ $json.hasLiveSlackWebhook }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1030003-0003-4000-8000-000000000010",
+      "name": "Live Slack Webhook Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.slackWebhookUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.financeBrief }) }}",
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "id": "b1030003-0003-4000-8000-000000000011",
+      "name": "Send Triage Alert to Finance Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1820,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "demo-finance-mode",
+              "name": "deliveryMode",
+              "value": "zero_key_demo_preview (replace slackWebhookUrl in Seed Dispute & Order Context to post live)",
+              "type": "string"
+            },
+            {
+              "id": "demo-finance-brief",
+              "name": "financeBrief",
+              "value": "={{ $json.financeBrief }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b1030003-0003-4000-8000-000000000012",
+      "name": "Zero-Key Demo Output (Finance Triage Preview)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1820,
+        660
+      ]
+    }
+  ],
+  "connections": {
+    "Test Sample Dispute & VAT Order": {
+      "main": [
+        [
+          {
+            "node": "Seed Dispute & Order Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stripe Dispute or Order Webhook": {
+      "main": [
+        [
+          {
+            "node": "Seed Dispute & Order Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Seed Dispute & Order Context": {
+      "main": [
+        [
+          {
+            "node": "Visa CE 3.0 120d-365d & 18k Char Lint",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "EU VAT VIES Consultation Proof",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RevClamp Hiring Watchlist (Account Verification)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Visa CE 3.0 120d-365d & 18k Char Lint": {
+      "main": [
+        [
+          {
+            "node": "Await Parallel Compliance Checks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "EU VAT VIES Consultation Proof": {
+      "main": [
+        [
+          {
+            "node": "Await Parallel Compliance Checks",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "RevClamp Hiring Watchlist (Account Verification)": {
+      "main": [
+        [
+          {
+            "node": "Await Parallel Compliance Checks",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Await Parallel Compliance Checks": {
+      "main": [
+        [
+          {
+            "node": "Assemble Finance & Dispute Triage Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Finance & Dispute Triage Receipt": {
+      "main": [
+        [
+          {
+            "node": "Live Slack Webhook Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Live Slack Webhook Configured?": {
+      "main": [
+        [
+          {
+            "node": "Send Triage Alert to Finance Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Zero-Key Demo Output (Finance Triage Preview)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {
+    "Test Sample Dispute & VAT Order": [
+      {
+        "json": {
+          "demo": true,
+          "disputeId": "du_demo_sample_01",
+          "customerId": "cus_demo_sample_01",
+          "sellerCountry": "DE",
+          "buyerVatId": "NL854502130B01",
+          "slackWebhookUrl": ""
+        }
+      }
+    ]
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "revclamp-gtm-pack-nov2026-wf03"
+  },
+  "tags": [
+    {
+      "name": "Finance"
+    },
+    {
+      "name": "Stripe"
+    },
+    {
+      "name": "Compliance"
+    },
+    {
+      "name": "RevClamp"
+    }
+  ]
+}

@@ -1,0 +1,418 @@
+{
+  "name": "02 - Inbound B2B Domain DNS, RFC 9116 Security.txt & Hiring Enricher (RevClamp)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Inbound B2B Domain DNS, RFC 9116 & Hiring Enricher\n\n**1. Instant Zero-Key Test (Works Out-of-the-Box with Zero Credentials):**\nClick **Test workflow** right now. The pinned inbound lead (`linear.app`) runs live against `POST https://revclamp.com/api/v1/b2b/domain-intelligence` (`demo: true`) and `RevClamp Hiring Watchlist` (`demoMode: true`) with zero API keys, and outputs a formatted AE Enrichment Preview.\n\n**2. Production Webhook Setup:**\n- Point your HubSpot / PostHog / Typeform / signup webhook to `Inbound Signup Webhook` (`POST /webhook/revclamp-inbound-domain-enricher`).\n- Provision a free workspace key (`rg_live_YOUR_WORKSPACE_KEY`) at `https://revclamp.com/tools/ats-hiring-watchlist`.\n- On `Normalize Inbound Lead`, paste your Slack Incoming Webhook URL (`https://hooks.slack.com/services/<TEAM_ID>/<BOT_ID>/<WEBHOOK_KEY>`) into `slackWebhookUrl` and set `demo` to `false`.\n- On `Domain DNS & RFC 9116 Intelligence`, add header `Authorization: Bearer rg_live_YOUR_WORKSPACE_KEY`.\n- On `RevClamp Hiring Watchlist (Board Diff)`, set `demoMode: false` and connect your `revClampApi` credential.",
+        "height": 360,
+        "width": 700,
+        "color": 4
+      },
+      "id": "b1020002-0002-4000-8000-000000000001",
+      "name": "Quickstart & Webhook Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        180,
+        60
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "b1020002-0002-4000-8000-000000000002",
+      "name": "Test Sample Inbound Lead",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "revclamp-inbound-domain-enricher",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "b1020002-0002-4000-8000-000000000003",
+      "name": "Inbound Signup Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "revclamp-inbound-domain-enricher-v1",
+      "position": [
+        200,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "field-company-domain",
+              "name": "company_domain",
+              "value": "={{ ($json.body?.company_domain || $json.company_domain || ($json.body?.email || $json.email || 'ops@linear.app').split('@')[1] || 'linear.app').trim().toLowerCase() }}",
+              "type": "string"
+            },
+            {
+              "id": "field-lead-source",
+              "name": "lead_source",
+              "value": "={{ $json.body?.lead_source || $json.lead_source || 'inbound_demo_request' }}",
+              "type": "string"
+            },
+            {
+              "id": "field-slack-webhook",
+              "name": "slackWebhookUrl",
+              "value": "={{ $json.body?.slackWebhookUrl || $json.slackWebhookUrl || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "field-demo-flag",
+              "name": "demo",
+              "value": "={{ $json.body?.demo !== undefined ? Boolean($json.body.demo) : ($json.demo !== undefined ? Boolean($json.demo) : true) }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b1020002-0002-4000-8000-000000000004",
+      "name": "Normalize Inbound Lead",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        460,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://revclamp.com/api/v1/b2b/domain-intelligence",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ domain: $json.company_domain, demo: $json.demo }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "b1020002-0002-4000-8000-000000000005",
+      "name": "Domain DNS & RFC 9116 Intelligence",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "watchlist",
+        "operation": "previewDiff",
+        "demoMode": true,
+        "preset": "devtools_outbound_diff"
+      },
+      "id": "b1020002-0002-4000-8000-000000000006",
+      "name": "RevClamp Hiring Watchlist (Board Diff)",
+      "type": "n8n-nodes-revclamp.revClampHiringWatchlist",
+      "typeVersion": 1,
+      "position": [
+        980,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Normalize Inbound Lead').first().json || {};\nconst domIntel = $('Domain DNS & RFC 9116 Intelligence').first().json || {};\nconst hiring = $input.first().json || {};\n\nconst domain = domIntel.domain || lead.company_domain || 'linear.app';\nconst mxStatus = domIntel.mx_status || 'unknown';\nconst spfStatus = domIntel.spf_status || 'unknown';\nconst dmarcPolicy = domIntel.dmarc_policy || 'none';\nconst paymentProvider = domIntel.payment_provider || 'unknown';\nconst atsProvider = domIntel.ats_provider || hiring.atsProvider || 'UNKNOWN';\nconst securityTxtStatus = domIntel.security_txt_status || 'missing';\nconst securityContact = domIntel.security_contact || 'none';\n\nconst openedRoles = Number(hiring.counts?.opened ?? 0);\nconst compChangedRoles = Number(hiring.counts?.compChanged ?? 0);\nconst totalOpenRoles = Number(hiring.total_open_roles ?? openedRoles);\n\nconst isEnterpriseHighIntent = mxStatus === 'present' && (openedRoles > 0 || totalOpenRoles > 0 || domIntel.ats_status === 'observed');\n\nconst rawWebhook = String(lead.slackWebhookUrl || '').trim();\nconst hasLiveSlackWebhook = rawWebhook.startsWith('https://hooks.slack.com/services/') && !rawWebhook.includes('<');\n\nconst summaryText = [\n  `*High-Intent Inbound B2B Account: ${domain}* (Source: ${lead.lead_source || 'webhook'})`,\n  `- DNS Deliverability: MX=${mxStatus}, SPF=${spfStatus}, DMARC=${dmarcPolicy}`,\n  `- RFC 9116 security.txt: ${securityTxtStatus} (${securityContact})`,\n  `- Billing & ATS Stack: Payment=${paymentProvider} | ATS=${atsProvider} (${domIntel.ats_board_slug || hiring.boardKey || 'verified'})`,\n  `- Hiring Velocity Signal: +${openedRoles} newly opened roles, ${compChangedRoles} comp band raises`\n].join('\\n');\n\nreturn [{\n  json: {\n    domain,\n    lead_source: lead.lead_source || 'webhook',\n    mx_status: mxStatus,\n    spf_status: spfStatus,\n    dmarc_policy: dmarcPolicy,\n    payment_provider: paymentProvider,\n    ats_provider: atsProvider,\n    security_txt_status: securityTxtStatus,\n    security_contact: securityContact,\n    opened_roles: openedRoles,\n    comp_changed_roles: compChangedRoles,\n    is_enterprise_high_intent: isEnterpriseHighIntent,\n    slackWebhookUrl: rawWebhook,\n    hasLiveSlackWebhook,\n    summary_text: summaryText\n  }\n}];"
+      },
+      "id": "b1020002-0002-4000-8000-000000000007",
+      "name": "Score Domain + Hiring Posture",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1240,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-enterprise-high-intent",
+              "leftValue": "={{ $json.is_enterprise_high_intent }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1020002-0002-4000-8000-000000000008",
+      "name": "Enterprise MX + Active Hiring?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-ae-live-webhook",
+              "leftValue": "={{ $json.hasLiveSlackWebhook }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1020002-0002-4000-8000-000000000009",
+      "name": "Live Slack Webhook Configured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1740,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.slackWebhookUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.summary_text }) }}",
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "id": "b1020002-0002-4000-8000-000000000010",
+      "name": "Route to AE Desk (Slack / CRM Webhook)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "demo-ae-mode",
+              "name": "deliveryMode",
+              "value": "zero_key_demo_preview (replace slackWebhookUrl in Normalize Inbound Lead to post live)",
+              "type": "string"
+            },
+            {
+              "id": "demo-ae-summary",
+              "name": "summary_text",
+              "value": "={{ $json.summary_text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b1020002-0002-4000-8000-000000000011",
+      "name": "Zero-Key Demo Output (AE Enrichment Preview)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2000,
+        520
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "b1020002-0002-4000-8000-000000000012",
+      "name": "Standard Self-Serve Nurture Queue",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1740,
+        680
+      ]
+    }
+  ],
+  "connections": {
+    "Test Sample Inbound Lead": {
+      "main": [
+        [
+          {
+            "node": "Normalize Inbound Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbound Signup Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Inbound Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Inbound Lead": {
+      "main": [
+        [
+          {
+            "node": "Domain DNS & RFC 9116 Intelligence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Domain DNS & RFC 9116 Intelligence": {
+      "main": [
+        [
+          {
+            "node": "RevClamp Hiring Watchlist (Board Diff)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RevClamp Hiring Watchlist (Board Diff)": {
+      "main": [
+        [
+          {
+            "node": "Score Domain + Hiring Posture",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Domain + Hiring Posture": {
+      "main": [
+        [
+          {
+            "node": "Enterprise MX + Active Hiring?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enterprise MX + Active Hiring?": {
+      "main": [
+        [
+          {
+            "node": "Live Slack Webhook Configured?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Standard Self-Serve Nurture Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Live Slack Webhook Configured?": {
+      "main": [
+        [
+          {
+            "node": "Route to AE Desk (Slack / CRM Webhook)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Zero-Key Demo Output (AE Enrichment Preview)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {
+    "Test Sample Inbound Lead": [
+      {
+        "json": {
+          "company_domain": "linear.app",
+          "email": "security@linear.app",
+          "lead_source": "inbound_demo_request",
+          "slackWebhookUrl": "",
+          "demo": true
+        }
+      }
+    ]
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "revclamp-gtm-pack-nov2026-wf02"
+  },
+  "tags": [
+    {
+      "name": "Lead Enrichment"
+    },
+    {
+      "name": "RevOps"
+    },
+    {
+      "name": "RevClamp"
+    }
+  ]
+}
