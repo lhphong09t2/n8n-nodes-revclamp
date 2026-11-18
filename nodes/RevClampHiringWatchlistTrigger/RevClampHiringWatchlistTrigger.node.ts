@@ -1,43 +1,59 @@
-let NodeApiError;
-try {
-  ({ NodeApiError } = require('n8n-workflow'));
-} catch {
-  NodeApiError = class NodeApiError extends Error {
-    constructor(node, errorResponse, options = {}) {
-      const rawMsg =
-        (options && options.message) ||
-        (errorResponse &&
-          typeof errorResponse === 'object' &&
-          (errorResponse.message ||
-            (errorResponse.response &&
-              errorResponse.response.body &&
-              (errorResponse.response.body.message || errorResponse.response.body.error)))) ||
-        String(errorResponse || 'API request failed');
-      super(String(rawMsg));
-      this.name = 'NodeApiError';
-      this.node = node;
-      this.httpCode =
-        String(
-          (options && options.httpCode) ||
-            (errorResponse &&
-              (errorResponse.httpCode ||
-                errorResponse.statusCode ||
-                (errorResponse.response && errorResponse.response.statusCode))) ||
-            ''
-        ) || null;
-      this.description =
-        (options && options.description) ||
-        (errorResponse &&
-          errorResponse.response &&
-          errorResponse.response.body &&
-          (errorResponse.response.body.error || errorResponse.response.body.upgrade_url)) ||
-        undefined;
-      this.cause = errorResponse;
-    }
-  };
+import {
+  NodeApiError,
+  NodeConnectionTypes,
+  type IDataObject,
+  type INode,
+  type INodeExecutionData,
+  type INodeType,
+  type INodeTypeDescription,
+  type IPollFunctions,
+  type JsonObject,
+} from 'n8n-workflow';
+
+interface WatchlistEventRecord extends IDataObject {
+  event_id?: string;
+  eventId?: string;
+  transition_type?: string;
+  transitionType?: string;
+  event_type?: string;
+  eventType?: string;
+  board_key?: string;
+  boardKey?: string;
+  poll_window_utc?: string;
+  pollWindowUtc?: string;
+  job_id?: string;
+  jobId?: string;
+  cursor?: string | number;
+  event_seq?: string | number;
+  eventSeq?: string | number;
 }
 
-function computeNonSecretCredentialTag(rawKey) {
+interface WatchlistEventsApiResponse {
+  tenant_id?: string;
+  tenantId?: string;
+  next_cursor?: string;
+  high_water_cursor?: string | number;
+  latest_cursor?: string | number;
+  events?: WatchlistEventRecord[];
+}
+
+interface ErrorShape {
+  name?: string;
+  message?: string;
+  httpCode?: string | number;
+  statusCode?: string | number;
+  status?: string | number;
+  response?: {
+    statusCode?: number;
+    status?: number;
+    body?: Record<string, unknown>;
+    data?: Record<string, unknown>;
+  };
+  error?: Record<string, unknown>;
+  body?: Record<string, unknown>;
+}
+
+function computeNonSecretCredentialTag(rawKey: unknown): string {
   const s = String(rawKey || '').trim();
   if (!s) return 'anon';
   let h1 = 0x811c9dc5;
@@ -52,14 +68,14 @@ function computeNonSecretCredentialTag(rawKey) {
   return `k_${h1.toString(16).padStart(8, '0')}${h2.toString(16).padStart(8, '0')}`;
 }
 
-function resolveNormalizedBaseUrl(rawBaseUrl) {
+function resolveNormalizedBaseUrl(rawBaseUrl: unknown): string {
   const trimmed = String(rawBaseUrl || '')
     .trim()
     .replace(/\/+$/, '');
   return trimmed || 'https://revclamp.com';
 }
 
-function matchesWatchlistEventFilter(ev, eventTypeFilter) {
+function matchesWatchlistEventFilter(ev: WatchlistEventRecord, eventTypeFilter: string): boolean {
   if (!ev || typeof ev !== 'object') return false;
   const evType = String(ev.transition_type || ev.transitionType || '').trim();
   const evAlias = String(ev.event_type || ev.eventType || evType).trim();
@@ -74,9 +90,9 @@ function matchesWatchlistEventFilter(ev, eventTypeFilter) {
   );
 }
 
-function normalizeWatchlistEvent(ev) {
+function normalizeWatchlistEvent(ev: WatchlistEventRecord): WatchlistEventRecord {
   const rawTransition = String(
-    ev.transition_type || ev.transitionType || ev.event_type || ev.eventType || ''
+    ev.transition_type || ev.transitionType || ev.event_type || ev.eventType || '',
   ).trim();
   const normalizedEventType =
     rawTransition === 'COMPENSATION_UPDATED' ? 'JOB_COMP_CHANGED' : rawTransition || 'JOB_OPENED';
@@ -86,16 +102,16 @@ function normalizeWatchlistEvent(ev) {
   };
 }
 
-function computeWatchlistEventId(ev) {
+function computeWatchlistEventId(ev: WatchlistEventRecord): string {
   const evType = String(ev.transition_type || ev.transitionType || ev.event_type || '').trim();
   return String(
     ev.event_id ||
       ev.eventId ||
-      `${ev.board_key || ev.boardKey || 'board'}:${ev.poll_window_utc || ev.pollWindowUtc || ''}:${evType}:${ev.job_id || ev.jobId || ''}`
+      `${ev.board_key || ev.boardKey || 'board'}:${ev.poll_window_utc || ev.pollWindowUtc || ''}:${evType}:${ev.job_id || ev.jobId || ''}`,
   );
 }
 
-function buildManualFallbackSample(eventTypeFilter, boardKey) {
+function buildManualFallbackSample(eventTypeFilter: string, boardKey: string): WatchlistEventRecord {
   const normalizedFilter =
     eventTypeFilter === 'JOB_COMP_CHANGED' || eventTypeFilter === 'COMPENSATION_UPDATED'
       ? 'JOB_COMP_CHANGED'
@@ -120,129 +136,146 @@ function buildManualFallbackSample(eventTypeFilter, boardKey) {
   };
 }
 
-function wrapTriggerApiError(nodeRef, error) {
-  if (error && typeof error === 'object' && error.name === 'NodeApiError') {
-    return error;
+function wrapTriggerApiError(nodeRef: INode, error: unknown): NodeApiError {
+  if (error && typeof error === 'object' && (error as ErrorShape).name === 'NodeApiError') {
+    return error as NodeApiError;
   }
+  const errObj = error && typeof error === 'object' ? (error as ErrorShape) : null;
   const payload =
-    (error &&
-      typeof error === 'object' &&
-      ((error.response && (error.response.body || error.response.data)) ||
-        error.error ||
-        error.body)) ||
+    (errObj &&
+      ((errObj.response && (errObj.response.body || errObj.response.data)) ||
+        errObj.error ||
+        errObj.body)) ||
     null;
   const httpCodeRaw =
-    error &&
-    typeof error === 'object' &&
-    (error.httpCode ||
-      error.statusCode ||
-      error.status ||
-      (error.response && (error.response.statusCode || error.response.status)));
+    errObj &&
+    (errObj.httpCode ||
+      errObj.statusCode ||
+      errObj.status ||
+      (errObj.response && (errObj.response.statusCode || errObj.response.status)));
   const httpCode = httpCodeRaw ? String(httpCodeRaw) : undefined;
   const apiMessage =
     (payload && typeof payload === 'object' && (payload.message || payload.error)) ||
     (error instanceof Error ? error.message : String(error || 'API request failed'));
-  const errorJson =
-    error && typeof error === 'object'
-      ? error
-      : { message: String(error || 'API request failed') };
+  const errorJson: JsonObject = errObj
+    ? (errObj as unknown as JsonObject)
+    : { message: String(error || 'API request failed') };
   return new NodeApiError(nodeRef, errorJson, {
     message: String(apiMessage),
     httpCode,
   });
 }
 
-class RevClampHiringWatchlistTrigger {
-  constructor() {
-    this.description = {
-      displayName: 'RevClamp TalentPulse Watchlist Trigger',
-      name: 'revClampHiringWatchlistTrigger',
-      icon: 'file:revclamp.svg',
-      group: ['trigger'],
-      version: 1,
-      subtitle: '={{$parameter["eventTypeFilter"]}}',
-      description:
-        'Starts an n8n workflow whenever a watched company opens a new role, updates compensation, or closes a job listing.',
-      defaults: {
-        name: 'RevClamp TalentPulse Watchlist Trigger',
-      },
-      polling: true,
-      inputs: [],
-      outputs: ['main'],
-      credentials: [
-        {
-          name: 'revClampApi',
-          required: true,
-        },
-      ],
-      properties: [
-        {
-          displayName: 'Hiring Signal Type',
-          name: 'eventTypeFilter',
-          type: 'options',
-          options: [
-            {
-              name: 'All Hiring Changes (Opened, Salary Updated & Closed)',
-              value: 'ALL',
-              description: 'Trigger on every verified career page update',
-            },
-            {
-              name: 'New Job Openings Only',
-              value: 'JOB_OPENED',
-              description: 'Trigger only when a company posts a brand-new job opening',
-            },
-            {
-              name: 'Salary & Compensation Updates Only',
-              value: 'JOB_COMP_CHANGED',
-              description: 'Trigger only when an existing role updates its published salary range',
-            },
-            {
-              name: 'Closed Roles Only',
-              value: 'JOB_CLOSED',
-              description: 'Trigger only when a role is removed from the company career page',
-            },
-          ],
-          default: 'ALL',
-          description:
-            'Choose which career page changes should start your workflow',
-        },
-        {
-          displayName: 'Filter by Company Board Key (Optional)',
-          name: 'boardKey',
-          type: 'string',
-          default: '',
-          placeholder: 'e.g. GREENHOUSE:stripe or ASHBY:ramp',
-          description:
-            'Optional specific company board key to watch. Leave blank to receive updates across all companies in your watchlist.',
-        },
-        {
-          displayName: 'Max Events Per Poll',
-          name: 'limit',
-          type: 'number',
-          typeOptions: {
-            minValue: 1,
-            maxValue: 200,
-          },
-          default: 50,
-          description:
-            'Maximum number of hiring events to fetch in a single polling check',
-        },
-        {
-          displayName: 'Emit Existing History on First Activation',
-          name: 'emitExistingOnActivation',
-          type: 'boolean',
-          default: false,
-          description:
-            'Whether to emit existing historical hiring events on the first active poll instead of starting from the latest cursor',
-        },
-      ],
-    };
+async function resolvePollBaseUrlAndCredTag(
+  ctx: IPollFunctions,
+): Promise<{ baseUrl: string; credTag: string }> {
+  let baseUrl = 'https://revclamp.com';
+  let credTag = 'anon';
+  try {
+    const creds = (await ctx.getCredentials('revClampApi')) as
+      | { baseUrl?: unknown; apiKey?: unknown }
+      | undefined;
+    if (creds && creds.baseUrl) {
+      baseUrl = resolveNormalizedBaseUrl(creds.baseUrl);
+    }
+    if (creds && creds.apiKey) {
+      credTag = computeNonSecretCredentialTag(creds.apiKey);
+    }
+  } catch {
+    baseUrl = 'https://revclamp.com';
   }
+  return { baseUrl, credTag };
+}
 
-  async poll() {
+export class RevClampHiringWatchlistTrigger implements INodeType {
+  description: INodeTypeDescription = {
+    displayName: 'RevClamp TalentPulse Watchlist Trigger',
+    name: 'revClampHiringWatchlistTrigger',
+    icon: { light: 'file:revclamp.svg', dark: 'file:revclamp.dark.svg' },
+    group: ['trigger'],
+    version: 1,
+    subtitle: '={{$parameter["eventTypeFilter"]}}',
+    description:
+      'Starts an n8n workflow whenever a watched company opens a new role, updates compensation, or closes a job listing.',
+    defaults: {
+      name: 'RevClamp TalentPulse Watchlist Trigger',
+    },
+    polling: true,
+    inputs: [],
+    outputs: [NodeConnectionTypes.Main],
+    credentials: [
+      {
+        name: 'revClampApi',
+        required: true,
+      },
+    ],
+    properties: [
+      {
+        displayName: 'Hiring Signal Type',
+        name: 'eventTypeFilter',
+        type: 'options',
+        options: [
+          {
+            name: 'All Hiring Changes (Opened, Salary Updated & Closed)',
+            value: 'ALL',
+            description: 'Trigger on every verified career page update',
+          },
+          {
+            name: 'New Job Openings Only',
+            value: 'JOB_OPENED',
+            description: 'Trigger only when a company posts a brand-new job opening',
+          },
+          {
+            name: 'Salary & Compensation Updates Only',
+            value: 'JOB_COMP_CHANGED',
+            description: 'Trigger only when an existing role updates its published salary range',
+          },
+          {
+            name: 'Closed Roles Only',
+            value: 'JOB_CLOSED',
+            description: 'Trigger only when a role is removed from the company career page',
+          },
+        ],
+        default: 'ALL',
+        description: 'Choose which career page changes should start your workflow',
+      },
+      {
+        displayName: 'Filter by Company Board Key (Optional)',
+        name: 'boardKey',
+        type: 'string',
+        default: '',
+        placeholder: 'e.g. GREENHOUSE:stripe or ASHBY:ramp',
+        description:
+          'Optional specific company board key to watch. Leave blank to receive updates across all companies in your watchlist.',
+      },
+      {
+        displayName: 'Max Events Per Poll',
+        name: 'limit',
+        type: 'number',
+        typeOptions: {
+          minValue: 1,
+          maxValue: 200,
+        },
+        default: 50,
+        description: 'Max number of results to return',
+      },
+      {
+        displayName: 'Emit Existing History on First Activation',
+        name: 'emitExistingOnActivation',
+        type: 'boolean',
+        default: false,
+        description:
+          'Whether to emit existing historical hiring events on the first active poll instead of starting from the latest cursor',
+      },
+    ],
+  };
+
+  async poll(this: IPollFunctions): Promise<INodeExecutionData[][] | null> {
     const isManualMode = typeof this.getMode === 'function' && this.getMode() === 'manual';
     const webhookData = this.getWorkflowStaticData('node');
-    const eventTypeFilter = String(this.getNodeParameter('eventTypeFilter', 'ALL') || 'ALL').trim();
+    const eventTypeFilter = String(
+      this.getNodeParameter('eventTypeFilter', 'ALL') || 'ALL',
+    ).trim();
     const boardKey = String(this.getNodeParameter('boardKey', '') || '').trim();
     const rawLimit = Number(this.getNodeParameter('limit', 50));
     const boundedLimit =
@@ -250,31 +283,19 @@ class RevClampHiringWatchlistTrigger {
         ? Math.max(1, Math.min(200, Math.floor(rawLimit)))
         : 50;
     const emitExistingOnActivation = Boolean(
-      this.getNodeParameter('emitExistingOnActivation', false)
+      this.getNodeParameter('emitExistingOnActivation', false),
     );
     const nodeRef =
       typeof this.getNode === 'function'
         ? this.getNode()
-        : {
+        : ({
             name: 'RevClamp TalentPulse Watchlist Trigger',
             type: 'n8n-nodes-revclamp.revClampHiringWatchlistTrigger',
-          };
+          } as unknown as INode);
 
-    let baseUrl = 'https://revclamp.com';
-    let credTag = 'anon';
-    try {
-      const creds = await this.getCredentials('revClampApi');
-      if (creds && creds.baseUrl) {
-        baseUrl = resolveNormalizedBaseUrl(creds.baseUrl);
-      }
-      if (creds && creds.apiKey) {
-        credTag = computeNonSecretCredentialTag(creds.apiKey);
-      }
-    } catch {
-      baseUrl = 'https://revclamp.com';
-    }
+    const { baseUrl, credTag } = await resolvePollBaseUrlAndCredTag(this);
 
-    const baseFilterQs = {};
+    const baseFilterQs: IDataObject = {};
     if (eventTypeFilter && eventTypeFilter !== 'ALL') {
       baseFilterQs.transition_type =
         eventTypeFilter === 'JOB_COMP_CHANGED' ? 'COMPENSATION_UPDATED' : eventTypeFilter;
@@ -284,9 +305,9 @@ class RevClampHiringWatchlistTrigger {
     }
 
     if (isManualMode) {
-      let responseData;
+      let responseData: WatchlistEventsApiResponse;
       try {
-        responseData = await this.helpers.httpRequestWithAuthentication.call(
+        responseData = (await this.helpers.httpRequestWithAuthentication.call(
           this,
           'revClampApi',
           {
@@ -298,16 +319,15 @@ class RevClampHiringWatchlistTrigger {
               order: 'desc',
             },
             json: true,
-          }
-        );
+          },
+        )) as WatchlistEventsApiResponse;
       } catch (error) {
         throw wrapTriggerApiError(nodeRef, error);
       }
 
-      const rawEvents = Array.isArray(responseData && responseData.events)
-        ? responseData.events
-        : [];
-      const matchingNormalized = [];
+      const rawEvents: WatchlistEventRecord[] =
+        responseData && Array.isArray(responseData.events) ? responseData.events : [];
+      const matchingNormalized: WatchlistEventRecord[] = [];
       for (const ev of rawEvents) {
         if (!matchesWatchlistEventFilter(ev, eventTypeFilter)) continue;
         matchingNormalized.push(normalizeWatchlistEvent(ev));
@@ -334,9 +354,9 @@ class RevClampHiringWatchlistTrigger {
     }
 
     if (!webhookData.initialized && !emitExistingOnActivation) {
-      let seedResponse;
+      let seedResponse: WatchlistEventsApiResponse;
       try {
-        seedResponse = await this.helpers.httpRequestWithAuthentication.call(
+        seedResponse = (await this.helpers.httpRequestWithAuthentication.call(
           this,
           'revClampApi',
           {
@@ -348,22 +368,21 @@ class RevClampHiringWatchlistTrigger {
               order: 'desc',
             },
             json: true,
-          }
-        );
+          },
+        )) as WatchlistEventsApiResponse;
       } catch (error) {
         throw wrapTriggerApiError(nodeRef, error);
       }
 
       const seedTenantId = String(
-        (seedResponse && (seedResponse.tenant_id || seedResponse.tenantId)) || ''
+        (seedResponse && (seedResponse.tenant_id || seedResponse.tenantId)) || '',
       ).trim();
       if (seedTenantId) {
         webhookData.lastTenantId = seedTenantId;
       }
 
-      const seedEvents = Array.isArray(seedResponse && seedResponse.events)
-        ? seedResponse.events
-        : [];
+      const seedEvents: WatchlistEventRecord[] =
+        seedResponse && Array.isArray(seedResponse.events) ? seedResponse.events : [];
       const newestEv = seedEvents[0];
       const highWaterCursor =
         (newestEv && (newestEv.cursor ?? newestEv.event_seq ?? newestEv.eventSeq)) ??
@@ -379,7 +398,7 @@ class RevClampHiringWatchlistTrigger {
       return null;
     }
 
-    const qs = {
+    const qs: IDataObject = {
       ...baseFilterQs,
       limit: boundedLimit,
       order: 'asc',
@@ -388,9 +407,9 @@ class RevClampHiringWatchlistTrigger {
       qs.after_cursor = String(webhookData.lastCursor);
     }
 
-    let responseData;
+    let responseData: WatchlistEventsApiResponse;
     try {
-      responseData = await this.helpers.httpRequestWithAuthentication.call(
+      responseData = (await this.helpers.httpRequestWithAuthentication.call(
         this,
         'revClampApi',
         {
@@ -398,14 +417,14 @@ class RevClampHiringWatchlistTrigger {
           url: `${baseUrl}/api/v1/b2b/ats-watchlist/events`,
           qs,
           json: true,
-        }
-      );
+        },
+      )) as WatchlistEventsApiResponse;
     } catch (error) {
       throw wrapTriggerApiError(nodeRef, error);
     }
 
     const responseTenantId = String(
-      (responseData && (responseData.tenant_id || responseData.tenantId)) || ''
+      (responseData && (responseData.tenant_id || responseData.tenantId)) || '',
     ).trim();
     if (
       webhookData.lastTenantId &&
@@ -426,15 +445,14 @@ class RevClampHiringWatchlistTrigger {
 
     webhookData.initialized = true;
 
-    const rawEvents = Array.isArray(responseData && responseData.events)
-      ? responseData.events
-      : [];
+    const rawEvents: WatchlistEventRecord[] =
+      responseData && Array.isArray(responseData.events) ? responseData.events : [];
     const seenIds = Array.isArray(webhookData.seenEventIds)
-      ? webhookData.seenEventIds.slice(-500)
+      ? (webhookData.seenEventIds as string[]).slice(-500)
       : [];
     const seenSet = new Set(seenIds);
 
-    const newEvents = [];
+    const newEvents: WatchlistEventRecord[] = [];
     for (const ev of rawEvents) {
       if (!matchesWatchlistEventFilter(ev, eventTypeFilter)) continue;
       const evId = computeWatchlistEventId(ev);
@@ -469,5 +487,3 @@ class RevClampHiringWatchlistTrigger {
     return [this.helpers.returnJsonArray(newEvents)];
   }
 }
-
-module.exports = { RevClampHiringWatchlistTrigger };

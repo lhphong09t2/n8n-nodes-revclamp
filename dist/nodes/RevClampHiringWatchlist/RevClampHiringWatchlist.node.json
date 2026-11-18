@@ -1,0 +1,18 @@
+{
+    "node": "n8n-nodes-revclamp.revClampHiringWatchlist",
+    "nodeVersion": "1.0",
+    "codexVersion": "1.0",
+    "categories": ["Sales", "Marketing & Content", "Productivity"],
+    "resources": {
+        "credentialDocumentation": [
+            {
+                "url": "https://revclamp.com/docs/onboarding"
+            }
+        ],
+        "primaryDocumentation": [
+            {
+                "url": "https://revclamp.com/tools/ats-hiring-watchlist"
+            }
+        ]
+    }
+}
