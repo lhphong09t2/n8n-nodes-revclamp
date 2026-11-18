@@ -52,6 +52,33 @@ async function resolveConfiguredBaseUrl(ctx: IExecuteFunctions): Promise<string>
   return 'https://revclamp.com';
 }
 
+async function executeAuthenticatedWatchlistRequest(
+  ctx: IExecuteFunctions,
+  nodeRef: INode,
+  itemIndex: number,
+  requestOptions: IHttpRequestOptions,
+): Promise<IDataObject> {
+  let hasValidKey = false;
+  try {
+    const creds = (await ctx.getCredentials('revClampApi')) as { apiKey?: unknown } | undefined;
+    hasValidKey = Boolean(creds && String(creds.apiKey || '').trim());
+  } catch {
+    hasValidKey = false;
+  }
+  if (!hasValidKey) {
+    throw new NodeOperationError(
+      nodeRef,
+      'RevClamp API credentials are required for this operation (select a RevClamp API credential or enable Demo Mode in Preview Diff).',
+      { itemIndex },
+    );
+  }
+  return (await ctx.helpers.httpRequestWithAuthentication.call(
+    ctx,
+    'revClampApi',
+    requestOptions,
+  )) as IDataObject;
+}
+
 function wrapExecutionError(
   nodeRef: INode,
   error: unknown,
@@ -138,24 +165,7 @@ export class RevClampHiringWatchlist implements INodeType {
     credentials: [
       {
         name: 'revClampApi',
-        required: true,
-        displayOptions: {
-          show: {
-            resource: ['watchlist'],
-            operation: ['enrollBoard', 'listBoards', 'syncWatchlist'],
-          },
-        },
-      },
-      {
-        name: 'revClampApi',
-        required: true,
-        displayOptions: {
-          show: {
-            resource: ['watchlist'],
-            operation: ['previewDiff'],
-            demoMode: [false],
-          },
-        },
+        required: false,
       },
     ],
     properties: [
@@ -501,11 +511,7 @@ export class RevClampHiringWatchlist implements INodeType {
           const responseData = (
             demoMode
               ? await this.helpers.httpRequest.call(this, requestOptions)
-              : await this.helpers.httpRequestWithAuthentication.call(
-                  this,
-                  'revClampApi',
-                  requestOptions,
-                )
+              : await executeAuthenticatedWatchlistRequest(this, nodeRef, i, requestOptions)
           ) as IDataObject;
 
           returnData.push({
@@ -563,16 +569,12 @@ export class RevClampHiringWatchlist implements INodeType {
             body.delivery_webhook_url = deliveryWebhookUrl;
           }
 
-          const responseData = (await this.helpers.httpRequestWithAuthentication.call(
-            this,
-            'revClampApi',
-            {
-              method: 'POST',
-              url: `${baseUrl}/api/v1/b2b/ats-watchlist`,
-              body,
-              json: true,
-            },
-          )) as IDataObject;
+          const responseData = await executeAuthenticatedWatchlistRequest(this, nodeRef, i, {
+            method: 'POST',
+            url: `${baseUrl}/api/v1/b2b/ats-watchlist`,
+            body,
+            json: true,
+          });
 
           returnData.push({
             json: responseData,
@@ -582,15 +584,11 @@ export class RevClampHiringWatchlist implements INodeType {
         }
 
         if (operation === 'listBoards') {
-          const responseData = (await this.helpers.httpRequestWithAuthentication.call(
-            this,
-            'revClampApi',
-            {
-              method: 'GET',
-              url: `${baseUrl}/api/v1/b2b/ats-watchlist`,
-              json: true,
-            },
-          )) as IDataObject;
+          const responseData = await executeAuthenticatedWatchlistRequest(this, nodeRef, i, {
+            method: 'GET',
+            url: `${baseUrl}/api/v1/b2b/ats-watchlist`,
+            json: true,
+          });
 
           returnData.push({
             json: responseData,
@@ -615,16 +613,12 @@ export class RevClampHiringWatchlist implements INodeType {
             }
           }
 
-          const responseData = (await this.helpers.httpRequestWithAuthentication.call(
-            this,
-            'revClampApi',
-            {
-              method: 'POST',
-              url: `${baseUrl}/api/v1/b2b/ats-watchlist/sync`,
-              body,
-              json: true,
-            },
-          )) as IDataObject;
+          const responseData = await executeAuthenticatedWatchlistRequest(this, nodeRef, i, {
+            method: 'POST',
+            url: `${baseUrl}/api/v1/b2b/ats-watchlist/sync`,
+            body,
+            json: true,
+          });
 
           returnData.push({
             json: responseData,

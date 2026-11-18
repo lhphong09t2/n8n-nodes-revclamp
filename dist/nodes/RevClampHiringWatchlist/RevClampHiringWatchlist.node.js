@@ -23,6 +23,20 @@ async function resolveConfiguredBaseUrl(ctx) {
     }
     return 'https://revclamp.com';
 }
+async function executeAuthenticatedWatchlistRequest(ctx, nodeRef, itemIndex, requestOptions) {
+    let hasValidKey = false;
+    try {
+        const creds = (await ctx.getCredentials('revClampApi'));
+        hasValidKey = Boolean(creds && String(creds.apiKey || '').trim());
+    }
+    catch {
+        hasValidKey = false;
+    }
+    if (!hasValidKey) {
+        throw new n8n_workflow_1.NodeOperationError(nodeRef, 'RevClamp API credentials are required for this operation (select a RevClamp API credential or enable Demo Mode in Preview Diff).', { itemIndex });
+    }
+    return (await ctx.helpers.httpRequestWithAuthentication.call(ctx, 'revClampApi', requestOptions));
+}
 function wrapExecutionError(nodeRef, error, itemIndex) {
     if (error &&
         typeof error === 'object' &&
@@ -93,24 +107,7 @@ class RevClampHiringWatchlist {
             credentials: [
                 {
                     name: 'revClampApi',
-                    required: true,
-                    displayOptions: {
-                        show: {
-                            resource: ['watchlist'],
-                            operation: ['enrollBoard', 'listBoards', 'syncWatchlist'],
-                        },
-                    },
-                },
-                {
-                    name: 'revClampApi',
-                    required: true,
-                    displayOptions: {
-                        show: {
-                            resource: ['watchlist'],
-                            operation: ['previewDiff'],
-                            demoMode: [false],
-                        },
-                    },
+                    required: false,
                 },
             ],
             properties: [
@@ -435,7 +432,7 @@ class RevClampHiringWatchlist {
                     };
                     const responseData = (demoMode
                         ? await this.helpers.httpRequest.call(this, requestOptions)
-                        : await this.helpers.httpRequestWithAuthentication.call(this, 'revClampApi', requestOptions));
+                        : await executeAuthenticatedWatchlistRequest(this, nodeRef, i, requestOptions));
                     returnData.push({
                         json: responseData,
                         pairedItem: { item: i },
@@ -483,12 +480,12 @@ class RevClampHiringWatchlist {
                     if (deliveryWebhookUrl) {
                         body.delivery_webhook_url = deliveryWebhookUrl;
                     }
-                    const responseData = (await this.helpers.httpRequestWithAuthentication.call(this, 'revClampApi', {
+                    const responseData = await executeAuthenticatedWatchlistRequest(this, nodeRef, i, {
                         method: 'POST',
                         url: `${baseUrl}/api/v1/b2b/ats-watchlist`,
                         body,
                         json: true,
-                    }));
+                    });
                     returnData.push({
                         json: responseData,
                         pairedItem: { item: i },
@@ -496,11 +493,11 @@ class RevClampHiringWatchlist {
                     continue;
                 }
                 if (operation === 'listBoards') {
-                    const responseData = (await this.helpers.httpRequestWithAuthentication.call(this, 'revClampApi', {
+                    const responseData = await executeAuthenticatedWatchlistRequest(this, nodeRef, i, {
                         method: 'GET',
                         url: `${baseUrl}/api/v1/b2b/ats-watchlist`,
                         json: true,
-                    }));
+                    });
                     returnData.push({
                         json: responseData,
                         pairedItem: { item: i },
@@ -521,12 +518,12 @@ class RevClampHiringWatchlist {
                             body.domain = syncFilter;
                         }
                     }
-                    const responseData = (await this.helpers.httpRequestWithAuthentication.call(this, 'revClampApi', {
+                    const responseData = await executeAuthenticatedWatchlistRequest(this, nodeRef, i, {
                         method: 'POST',
                         url: `${baseUrl}/api/v1/b2b/ats-watchlist/sync`,
                         body,
                         json: true,
-                    }));
+                    });
                     returnData.push({
                         json: responseData,
                         pairedItem: { item: i },
